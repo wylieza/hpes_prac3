@@ -32,7 +32,12 @@
  * in this project that have Doxygen comments.
  */
 
-
+struct mpi_descriptor
+{
+	int id;
+	int index;
+	int size;
+};
 
 //---------- STUDENT NUMBERS --------------------------------------------------
 //
