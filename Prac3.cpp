@@ -32,12 +32,7 @@
  * in this project that have Doxygen comments.
  */
 
-struct mpi_descriptor
-{
-	int id;
-	int index;
-	int size;
-};
+
 
 //---------- STUDENT NUMBERS --------------------------------------------------
 //
@@ -55,6 +50,7 @@ struct mpi_descriptor
 
 // Includes needed for the program
 #include "Prac3.h"
+
 
 //Pixel Struct
 typedef struct pixel{
@@ -112,7 +108,6 @@ typedef struct pixel{
     }
 } pixel;
 
->>>>>>> Stashed changes
 /** This is the master node function, describing the operations
     that the master will be doing */
 void Master () {
