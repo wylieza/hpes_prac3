@@ -56,14 +56,6 @@ struct mpi_descriptor
 // Includes needed for the program
 #include "Prac3.h"
 
-<<<<<<< Updated upstream
-=======
-struct mpi_descriptor
-{
-	int id;
-	int index;
-	int size;
-};
 //Pixel Struct
 typedef struct pixel{
     u_char r;
