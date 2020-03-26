@@ -145,14 +145,228 @@ void Master () {
  // This is example code of how to copy image files ----------------------------
  printf("Start of example code...\n");
  for(j = 0; j < 10; j++){
+     j = 9; //ONLY RUN ONCE DURING DEV.
   tic();
   int x, y;
+  int count = 0;
+  int index = 0;
+  printf("Size: %d\n", Input.Height*Input.Width);
+  pixel *pixels = (pixel*) malloc(Input.Height*Input.Width*sizeof(pixel));
+  printf("Pixel generating\n");
   for(y = 0; y < Input.Height; y++){
    for(x = 0; x < Input.Width*Input.Components; x++){
-    Output.Rows[y][x] = Input.Rows[y][x];
+    //Output.Rows[y][x] = Input.Rows[y][x];
+
+    //Generate the pixels
+    if (count%3 == 0 && j == 9){
+        *(pixels+index++) = {(u_char)Input.Rows[y][x], (u_char)Input.Rows[y][x+1], (u_char)Input.Rows[y][x+2]};
+    }
+    count++;
    }
   }
+
+    printf("Pixel filtering\n");
+
+    //filter with MD filter
+    int yl = Input.Height; //Number of rows
+    int xl = (Input.Width); //Number of pixels wide
+    int offset;
+    int empty = 0;
+    for (int i = 0; i < yl*xl; i++){
+        pixel npx[8];
+        
+        //cases:
+        if(i == 0){ //1
+            offset = i+1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == xl-1){ //2
+            offset = i-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == (yl-1)*xl){ //3
+            offset = i-xl;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == yl*xl-1){ //4
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == yl*xl-1){ //4
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+        
+        if(i%xl == 0 && empty == 0){ //5
+            offset = i-xl;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(i < xl-1 && empty == 0){ //6
+            offset = i+1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-1;
+            npx[3] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if((i+1)%xl == 0 && empty == 0){ //7
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(i > (yl-1)*xl && empty == 0){ //8
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(empty == 0){
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+1;
+            npx[4] = *(pixels + offset);
+
+            offset = i+xl-1;
+            npx[5] = *(pixels + offset);
+            
+            offset = i+xl;
+            npx[6] = *(pixels + offset);
+
+            offset = i+xl+1;
+            npx[7] = *(pixels + offset);
+
+            
+        }else{
+
+            for(int i = 8-empty; i < 8; i++){
+                npx[i] = {0, 0, 0};
+            }
+        }
+        empty = 0;
+
+        pixel mdpixel = ((pixels + i)->determine_median(&(npx[0])));
+
+        Output.Rows[(int) i/xl][i%xl*3] = mdpixel.r;
+        Output.Rows[(int) i/xl][(i%xl*3) + 1] = mdpixel.g;
+        Output.Rows[(int) i/xl][(i%xl*3) + 2] = mdpixel.b;
+
+        //printf("Pixel %d processed\n", i);
+    }
+
   printf("Time = %lg ms\n", (double)toc()/1e-3);
+
+for(int i = 0; i < 1000 && j == 9; i++){
+    pixel mdpx = (pixels+i)->determine_median((pixels+i+1));
+    //printf("MDPX from main -> R: %d, G: %d, B: %d\n", mdpx.r, mdpx.g, mdpx.b);
+}
+
  }
  printf("End of example code...\n\n");
  // End of example -------------------------------------------------------------
