@@ -66,16 +66,19 @@ typedef struct pixel{
     u_char g;
     u_char b;
 
-    pixel determine_median(pixel *neibours){ //Assumes 8 neibours will be passed
+    
+} pixel;
+
+pixel determine_median(pixel *thisp, pixel *neibours){ //Assumes 8 neibours will be passed
         //Create an ordered list of values
         u_char reds[9];
         u_char greens[9];
         u_char blues[9];
 
         //Insert first value
-        reds[0] = r;
-        greens[0] = g;
-        blues[0] = b;
+        reds[0] = thisp->r;
+        greens[0] = thisp->g;
+        blues[0] = thisp->b;
 
         //Insert into array making sure they are stored in asseding order (Thus the 5th item (reds[4]) is the median r value)
         for (int i = 0; i < 8; i++){
@@ -114,7 +117,7 @@ typedef struct pixel{
         pixel median_pixel = {reds[4], greens[4], blues[4]}; //Select the median (middle value) - easy because the array is in ascending order...
         return median_pixel; //Return the median pixel
     }
-} pixel;
+
 void DumpHex(const void* data, size_t size) {
 	char ascii[17];
 	size_t i, j;
@@ -151,7 +154,7 @@ void Master () {
  int  j;             //! j: Loop counter
  char buff[BUFSIZE]; //! buff: Buffer for transferring message data
  MPI_Status stat;    //! stat: Status of the MPI application
-char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
+char *pool = (char*)malloc(BUFSIZE + sizeof(int));
 
  // End of "Hello World" example................................................
 
@@ -162,18 +165,25 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
  }
 
  // Allocated RAM for the output image
- if(!Output.Allocate(Input.Width, Input.Height, Input.Components)) return;
-
 
 
  // This is example code of how to copy image files ----------------------------
  printf("Start of example code...\n");
  int size = Input.Height*Input.Width;
  int segment = (size / (numprocs-1) ) * Input.Components;
- int packets = ceil((double)(segment / BUFSIZE ));
+ int packets = floor((double)(segment / BUFSIZE ));
+ char * tmp = (char*)malloc(size * Input.Components + 10);
 
+for(int y = 0; y < Input.Height; y++){
+   for(int x = 0; x < Input.Width*Input.Components; x++){
+   tmp[(y * Input.Width * Input.Components) + x] = Input.Rows[y][x];
+}
+}
 
- //printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+ //DumpHex((void*)((char*)tmp), BUFSIZE * packets );
+ //printf("\n");
+ printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+
  for(j = 1; j < numprocs; j++){
   struct payload pl;
   pl.magic = 0xFE;
@@ -182,13 +192,16 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
   pl.csize = packets;
   pl.width = Input.Width;
   pl.size = segment / Input.Components;
+ 
   memcpy((void*)pool, (void*)&pl, sizeof(struct payload));
   MPI_Send((void*)pool, sizeof(struct payload), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
 
   // send image data
   for(int k = 0; k < packets; k++){
-  memcpy((void*)(char*)pool, (void*)(&Input.Rows[0][0] + (segment * (j-1)) + (BUFSIZE * k)), BUFSIZE);
-  MPI_Send((void*)pool, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD);
+  int * ip = (int*)pool;
+  *ip = k;
+  memcpy((void*)(char*)pool+sizeof(int), (void*)(tmp + (segment * (j-1)) + (BUFSIZE * k)), BUFSIZE);
+  MPI_Send((void*)pool, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
  
 
  } 
@@ -198,12 +211,13 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
 
 }
 //------------------------------------------------------------------------------
-
+int tt = 0;
 /** This is the Slave function, the workers of this MPI application. */
 void Slave(int ID){
+
  // Start of "Hello World" example..............................................
  char idstr[32];
- char buff [BUFSIZE + sizeof(struct payload)];
+ char buff [BUFSIZE + sizeof(int)];
  char *cluster = 0;
  MPI_Status stat;
 
@@ -228,19 +242,244 @@ if(pptr->magic == 0xFE){
  width = pptr->width;
  cluster = (char*)malloc (BUFSIZE * csize);
 
+ printf("CSIZE : %d\n", csize);
  for(int z = 0; z < csize; z++){
-  MPI_Recv(buff, BUFSIZE , MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
-  memcpy((void*)((char*)cluster + (z * BUFSIZE)), (char*)buff , BUFSIZE);
+  MPI_Recv(buff, BUFSIZE + sizeof(int) , MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
+  int id = *(int*)buff;
+  //printf("REC ID %d\n", id);
+  memcpy((void*)((char*)cluster + (id * BUFSIZE)), (char*)buff + sizeof(int) , BUFSIZE);
   
 }
+
+printf("WIDTH: %d\n", width);
+printf("HEIGHT: %d\n", height);
+Output.Allocate(width, height, 3);
+for(int y = 0; y <height; y++){
+   for(int x = 0; x < width*3; x++){
+	Output.Rows[y][x] = *(unsigned char*)(cluster + (y * width* 3) + x );
+	
+}
+
+}
+
+char name[200];
+sprintf(name, "Data/%d.jpg", ID);
+//Output.Write(name);
+//printf(name);
+
+
+
+printf("..\n");
+//DumpHex((void*)((char*)&Output.Rows[0][0]), 10);
+printf("..\n");
  //cluster contains the image subsection pixel data (r,g,b) array
  // height, width are vars for each subsection
- //DumpHex((void*)((char*)cluster), BUFSIZE * 2 );
- //printf("\n");
+ // DumpHex((void*)((char*)cluster), BUFSIZE * 3 );
+ printf("\n");
+//filter with MD filter
+   
+
+    pixel *pixels = (pixel*)cluster; 
+    int yl = height; //Number of rows
+    int xl = width; //Number of pixels wide
+
+    int offset;
+    int empty = 0;
+    for (int i = 0; i < yl*xl; i++){
+        pixel npx[8];
+        
+        //cases:
+        if(i == 0){ //1
+            offset = i+1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == xl-1){ //2
+            offset = i-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == (yl-1)*xl){ //3
+            offset = i-xl;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == yl*xl-1){ //4
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+
+        if(i == yl*xl-1){ //4
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+
+            empty = 5;
+        }
+        
+        if(i%xl == 0 && empty == 0){ //5
+            offset = i-xl;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(i < xl-1 && empty == 0){ //6
+            offset = i+1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i+xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-1;
+            npx[3] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if((i+1)%xl == 0 && empty == 0){ //7
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i+xl-1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+xl;
+            npx[4] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(i > (yl-1)*xl && empty == 0){ //8
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[1] = *(pixels + offset);
+
+            offset = i+1;
+            npx[2] = *(pixels + offset);
+
+            empty = 3;
+        }
+
+        if(empty == 0){
+            offset = i-xl-1;
+            npx[0] = *(pixels + offset);
+            
+            offset = i-xl;
+            npx[1] = *(pixels + offset);
+
+            offset = i-1;
+            npx[2] = *(pixels + offset);
+            
+            offset = i-xl+1;
+            npx[3] = *(pixels + offset);
+
+            offset = i+1;
+            npx[4] = *(pixels + offset);
+
+            offset = i+xl-1;
+            npx[5] = *(pixels + offset);
+            
+            offset = i+xl;
+            npx[6] = *(pixels + offset);
+
+            offset = i+xl+1;
+            npx[7] = *(pixels + offset);
+
+            
+        }else{
+
+            for(int i = 8-empty; i < 8; i++){
+                npx[i] = {0, 0, 0};
+            }
+        }
+
+	empty = 0;
+
+        pixel mdpixel = determine_median((pixel*)(pixels + i), &(npx[0]));
+       
+        Output.Rows[(int) i/xl][i%xl*3] = mdpixel.r;
+        Output.Rows[(int) i/xl][(i%xl*3) + 1] = mdpixel.g;
+        Output.Rows[(int) i/xl][(i%xl*3) + 2] = mdpixel.b;
+}
+
 }
 
 
- 
+char name[200];
+sprintf(name, "Data/%d.jpg", ID);
+Output.Write(name);
+//printf(name);
+
 
 
 
