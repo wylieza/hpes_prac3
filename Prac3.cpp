@@ -163,9 +163,9 @@ void Master()
 {
     //! <h3>Local vars</h3>
     // The above outputs a heading to doxygen function entry
-    int j;                                              //! j: Loop counter
-    char buff[BUFSIZE];                                 //! buff: Buffer for transferring message data
-    MPI_Status stat;                                    //! stat: Status of the MPI application
+    int j;                                                    //! j: Loop counter
+    char buff[BUFSIZE];                                       //! buff: Buffer for transferring message data
+    MPI_Status stat;                                          //! stat: Status of the MPI application
     char *data_frame = (char *)malloc(BUFSIZE + sizeof(int)); //holds info to send over mpi message
 
     // End of "Hello World" example................................................
@@ -181,17 +181,15 @@ void Master()
 
     // This is example code of how to copy image files ----------------------------
     printf("Start of example code...\n");
-    int total_num_pixels = Input.Height * Input.Width;                    //Total number of pixels
-    //int num_bytes = (total_num_pixels / (numprocs - 1)) * Input.Components; //Number of bytes per slave -> TODO Simplify
-    int num_rows = ceil((double)Input.Height/numprocs);     //Number of rows for all except the last segement
-    //int num_rows = ceil((double)num_bytes / Input.Width / 3);     //Number of rows for the first segement
-    //int rowcomp = (Input.Height - num_rows) / (numprocs - 2);   //Number of rows for all other segments (other two)
+    int total_num_pixels = Input.Height * Input.Width; //Total number of pixels
+    int num_rows = ceil((double)Input.Height / (numprocs-1)); //Number of rows for all except the last segement
+    printf("standard rows %d\n", num_rows);
 
-    int rows = 0;
-    //int packets = 0;
-    int num_msg = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE));   //Number of messages req to send all the rows in row_fit
-    //int packets_comp = ceil((double)((rowcomp * Input.Width * 3) / (double)BUFSIZE)); //Same thing but for rows comp
-    char *tmp = (char *)malloc(total_num_pixels * Input.Components);                              //Declaring tmp
+    //printf("Height: %d\n", Input.Height);
+    int num_msg = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE)); //Number of messages req to send all the rows in row_fit
+    int additional_msgs = ceil((double)(((num_rows+2) * Input.Width * 3) / (double)BUFSIZE))-num_msg;
+
+    char *tmp = (char *)malloc(total_num_pixels * Input.Components); //Declaring tmp
 
     for (int y = 0; y < Input.Height; y++)
     {
@@ -201,78 +199,74 @@ void Master()
         }
     }
 
-    //DumpHex((void*)((char*)tmp), BUFSIZE * packets );
-    //printf("\n");
-    //printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
-
+    int rows = 0;
     int total_image_data_sent = 0; //Track bytes already sent and index tmp memory accordingly
+    int tids_offset = 0; //Offset to include the additional two rows
     for (j = 1; j < numprocs; j++)
     {
         struct payload pl;
         pl.magic = 0xFE;
 
         pl.cid = j;
-        if (j != numprocs-1)
-        {                           //All slaves except the last
+        if (j != numprocs - 1)
+        {                          //All slaves except the last
             pl.num_msgs = num_msg; //num_msgs specifices number of messages to expect
-            rows = num_rows;           //Number of rows that can be reconstructed from the data
-            //packets = num_msg;  //Number of 128 byte messages to be sent (num_msgs specifices number of messages to expect)
+            rows = num_rows;       //Number of rows that can be reconstructed from the data
         }
         else
-        { //This is the last slave            
-            rows = Input.Height%num_rows; //The remaining number of rows (could be zero in this case evenly divided)
-            if(rows == 0){
+        {                                   //This is the last slave
+            rows = Input.Height % num_rows; //The remaining number of rows (could be zero in this case evenly divided)
+            if (rows == 0)
+            {
                 rows = num_rows;
             }
-            pl.num_msgs = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE));;
-            //packets = packets_comp;
+            pl.num_msgs = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE));
+
         }
 
-        pl.width = Input.Width;               //Number of pixels in a rows
-        pl.num_pixels = pl.width*rows; //Number of pixels in the segment
-        //pl.num_pixels = num_bytes / Input.Components; //Number of pixels per segment
+        if(j != 1){ //Not first slave so add overlap rows
+            pl.num_msgs += additional_msgs;
+            rows += 2;
+            tids_offset = 2*Input.Width*3;
+        }else{
+            tids_offset = 0;
+        }
+
+        pl.width = Input.Width;          //Number of pixels in a rows
+        pl.num_pixels = pl.width * rows; //Number of pixels in the segment
 
         memcpy((void *)data_frame, (void *)&pl, sizeof(struct payload));                        //memcpy(dest, source, number bytes to cpy)
         MPI_Send((void *)data_frame, sizeof(struct payload), MPI_CHAR, j, TAG, MPI_COMM_WORLD); //Send the details of incoming data
 
-
-    //Send image data
-    for (int k = 0; k < pl.num_msgs; k++){
-        //Write message number to data frame
-        int *ip = (int *)data_frame;                                                                                                  //casting so we can write first 4 bytes
-        *ip = k;
-        //(int *)data_frame = k;
-
-        //Write pixel data to data frame
-        if (k != (pl.num_msgs-1)){
-            memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + total_image_data_sent), BUFSIZE); //Tack on the image data (128 bytes of idata)
-            total_image_data_sent += BUFSIZE;
-        }else{
-            int remaining_bytes = (pl.num_pixels*3)%BUFSIZE;
-            if(remaining_bytes == 0){
-                remaining_bytes = BUFSIZE;
-            }
-            memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + total_image_data_sent), remaining_bytes); //Tack on the image data
-            total_image_data_sent += remaining_bytes;
-        }
-        MPI_Send((void *)data_frame, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD); 
-    }
-
-/*
-        // send image data
-        for (int k = 0; k < pl.num_pixels; k++)
-        {                                                                                                                           //for each of the 128byte msgs that must be sent
-            int *ip = (int *)data_frame;                                                                                                  //casting so we can write first 4 bytes
+        //Send image data
+        for (int k = 0; k < pl.num_msgs; k++)
+        {
+            //Write message number to data frame
+            int *ip = (int *)data_frame; //casting so we can write first 4 bytes
             *ip = k;
-            //(int *)data_frame = k;                                                                                                        //K is the packet id for keeping in order
-            memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + (rows * Input.Components * Input.Width * (j - 1)) + (BUFSIZE * k)), BUFSIZE); //Tack on the image data (128 bytes of idata)
-            MPI_Send((void *)data_frame, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);                                        //send the data
+
+            //Write pixel data to data frame
+            if (k != (pl.num_msgs - 1))
+            {
+                memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + total_image_data_sent - tids_offset), BUFSIZE); //Tack on the image data (128 bytes of idata)
+                total_image_data_sent += BUFSIZE;
+            }
+            else
+            {
+                int remaining_bytes = (pl.num_pixels * 3) % BUFSIZE;
+                if (remaining_bytes == 0)
+                {
+                    remaining_bytes = BUFSIZE;
+                }
+                memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + total_image_data_sent - tids_offset), remaining_bytes); //Tack on the image data
+                total_image_data_sent += remaining_bytes;
+            }
+            MPI_Send((void *)data_frame, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
         }
-*/
     }
 }
 //------------------------------------------------------------------------------
-int tt = 0;
+
 /** This is the Slave function, the workers of this MPI application. */
 void Slave(int ID)
 {
@@ -289,7 +283,7 @@ void Slave(int ID)
     MPI_Recv(buff, sizeof(struct payload), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
     struct payload *plptr = (struct payload *)buff;
     int num_msgs = plptr->num_msgs; //Number of packets to be recieved
-    int remaining_bytes = plptr->num_pixels*3;
+    int remaining_bytes = plptr->num_pixels * 3;
     int width = 0;
     int height = 0;
     if (plptr->magic == 0xFE)
@@ -300,23 +294,27 @@ void Slave(int ID)
         //printf("num_msgs : %d\n", plptr->num_msgs);
         //printf("width : %d\n", plptr->width);
 
-        height = plptr->num_pixels / plptr->width; //Num pixels in image/width (in pixels)
+        height = plptr->num_pixels / plptr->width; //Num pixels in segment/width (in pixels)
         width = plptr->width;
         image_segment = (char *)malloc(remaining_bytes); //Entire image segment
 
         printf("num_msgs : %d\n", num_msgs);
 
-        while(remaining_bytes > 0)
+        while (remaining_bytes > 0)
         {
             MPI_Recv(buff, BUFSIZE + sizeof(int), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
             int id = *(int *)buff;
             //printf("REC ID %d\n", id);
-            if(id < plptr->num_msgs-1){
+            if (id < plptr->num_msgs - 1)
+            {
                 memcpy((void *)((char *)image_segment + (id * BUFSIZE)), (char *)buff + sizeof(int), BUFSIZE); //Copy from recieved message into correct location in image_segment
                 remaining_bytes -= BUFSIZE;
-            }else{
-                int copy_size = remaining_bytes%BUFSIZE;
-                if(copy_size == 0){
+            }
+            else
+            {
+                int copy_size = remaining_bytes % BUFSIZE;
+                if (copy_size == 0)
+                {
                     copy_size = BUFSIZE;
                 }
                 memcpy((void *)((char *)image_segment + (id * BUFSIZE)), (char *)buff + sizeof(int), copy_size);
@@ -327,16 +325,6 @@ void Slave(int ID)
         printf("WIDTH: %d\n", width);
         printf("HEIGHT: %d\n", height);
         Output.Allocate(width, height, 3);
-
-        /* TESTING
-for(int y = 0; y <height; y++){
-   for(int x = 0; x < width*3; x++){
-	Output.Rows[y][x] = *(unsigned char*)(image_segment + (y * width* 3) + x );
-	
-}
-
-}
-*/
 
         char name[200];
         sprintf(name, "Data/%d.jpg", ID);
