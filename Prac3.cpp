@@ -51,6 +51,14 @@
 // Includes needed for the program
 #include "Prac3.h"
 
+struct __attribute__((packed)) payload
+{
+int magic;
+int cid;
+int width;
+int csize;
+int size;
+};
 
 //Pixel Struct
 typedef struct pixel{
@@ -58,16 +66,19 @@ typedef struct pixel{
     u_char g;
     u_char b;
 
-    pixel determine_median(pixel *neibours){ //Assumes 8 neibours will be passed
+    
+} pixel;
+
+pixel determine_median(pixel *thisp, pixel *neibours){ //Assumes 8 neibours will be passed
         //Create an ordered list of values
         u_char reds[9];
         u_char greens[9];
         u_char blues[9];
 
         //Insert first value
-        reds[0] = r;
-        greens[0] = g;
-        blues[0] = b;
+        reds[0] = thisp->r;
+        greens[0] = thisp->g;
+        blues[0] = thisp->b;
 
         //Insert into array making sure they are stored in asseding order (Thus the 5th item (reds[4]) is the median r value)
         for (int i = 0; i < 8; i++){
@@ -106,8 +117,35 @@ typedef struct pixel{
         pixel median_pixel = {reds[4], greens[4], blues[4]}; //Select the median (middle value) - easy because the array is in ascending order...
         return median_pixel; //Return the median pixel
     }
-} pixel;
 
+void DumpHex(const void* data, size_t size) {
+	char ascii[17];
+	size_t i, j;
+	ascii[16] = '\0';
+	for (i = 0; i < size; ++i) {
+		printf("%02X ", ((unsigned char*)data)[i]);
+		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+			ascii[i % 16] = ((unsigned char*)data)[i];
+		} else {
+			ascii[i % 16] = '.';
+		}
+		if ((i+1) % 8 == 0 || i+1 == size) {
+			printf(" ");
+			if ((i+1) % 16 == 0) {
+				printf("|  %s \n", ascii);
+			} else if (i+1 == size) {
+				ascii[(i+1) % 16] = '\0';
+				if ((i+1) % 16 <= 8) {
+					printf(" ");
+				}
+				for (j = (i+1) % 16; j < 16; ++j) {
+					printf("   ");
+				}
+				printf("|  %s \n", ascii);
+			}
+		}
+	}
+}
 /** This is the master node function, describing the operations
     that the master will be doing */
 void Master () {
@@ -116,21 +154,8 @@ void Master () {
  int  j;             //! j: Loop counter
  char buff[BUFSIZE]; //! buff: Buffer for transferring message data
  MPI_Status stat;    //! stat: Status of the MPI application
+char *pool = (char*)malloc(BUFSIZE + sizeof(int));
 
- // Start of "Hello World" example..............................................
- printf("0: We have %d processors\n", numprocs);
- for(j = 1; j < numprocs; j++) {
-  sprintf(buff, "Hello %d! ", j);
-  MPI_Send(buff, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD);
- }
- for(j = 1; j < numprocs; j++) {
-  // This is blocking: normally one would use MPI_Iprobe, with MPI_ANY_SOURCE,
-  // to check for messages, and only when there is a message, receive it
-  // with MPI_Recv.  This would let the master receive messages from any
-  // slave, instead of a specific one only.
-  MPI_Recv(buff, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD, &stat);
-  printf("0: %s\n", buff);
- }
  // End of "Hello World" example................................................
 
  // Read the input image
@@ -140,36 +165,139 @@ void Master () {
  }
 
  // Allocated RAM for the output image
- if(!Output.Allocate(Input.Width, Input.Height, Input.Components)) return;
+
 
  // This is example code of how to copy image files ----------------------------
  printf("Start of example code...\n");
- for(j = 0; j < 10; j++){
-     j = 9; //ONLY RUN ONCE DURING DEV.
-  tic();
-  int x, y;
-  int count = 0;
-  int index = 0;
-  printf("Size: %d\n", Input.Height*Input.Width);
-  pixel *pixels = (pixel*) malloc(Input.Height*Input.Width*sizeof(pixel));
-  printf("Pixel generating\n");
-  for(y = 0; y < Input.Height; y++){
-   for(x = 0; x < Input.Width*Input.Components; x++){
-    //Output.Rows[y][x] = Input.Rows[y][x];
+ int size = Input.Height*Input.Width;
+ int segment = (size / (numprocs-1) ) * Input.Components;
+ int rowfit = ceil((double)segment/Input.Width/3);
+ int rowcomp = (Input.Height - rowfit)/ (numprocs - 2);
 
-    //Generate the pixels
-    if (count%3 == 0 && j == 9){
-        *(pixels+index++) = {(u_char)Input.Rows[y][x], (u_char)Input.Rows[y][x+1], (u_char)Input.Rows[y][x+2]};
-    }
-    count++;
-   }
+ int row = 0;
+ int packets = 0;
+ int packets_fit = ceil((double)((rowfit * Input.Width * 3) / (double)BUFSIZE )); //TODO change this to ceil
+ int packets_comp = ceil((double)((rowcomp * Input.Width * 3) / (double)BUFSIZE )); //TODO change this to ceil
+ char * tmp = (char*)malloc(size * Input.Components); //Removed +10
+
+for(int y = 0; y < Input.Height; y++){
+   for(int x = 0; x < Input.Width*Input.Components; x++){
+   tmp[(y * Input.Width * Input.Components) + x] = Input.Rows[y][x];
+}
+}
+
+ //DumpHex((void*)((char*)tmp), BUFSIZE * packets );
+ //printf("\n");
+ //printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+
+ for(j = 1; j < numprocs; j++){
+  struct payload pl;
+  pl.magic = 0xFE;
+
+  pl.cid = j;
+  if(j == 1){
+  pl.csize = packets_fit;
+  row = rowfit;
+  packets = packets_fit;
   }
+  else{
+  pl.csize = packets_comp;
+  packets = packets_comp;
+  row = rowcomp;
+  }
+  pl.width = Input.Width;
+  pl.size = segment / Input.Components;
+ 
+  memcpy((void*)pool, (void*)&pl, sizeof(struct payload));
+  MPI_Send((void*)pool, sizeof(struct payload), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
 
-    printf("Pixel filtering\n");
+  // send image data
+  for(int k = 0; k < packets; k++){
+  int * ip = (int*)pool;
+  *ip = k;
+  memcpy((void*)(char*)pool+sizeof(int), (void*)(tmp + (row * 3 * Input.Width * (j-1)) + (BUFSIZE * k)), BUFSIZE);
+  MPI_Send((void*)pool, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
+ 
 
-    //filter with MD filter
-    int yl = Input.Height; //Number of rows
-    int xl = (Input.Width); //Number of pixels wide
+ } 
+
+
+ }
+
+}
+//------------------------------------------------------------------------------
+int tt = 0;
+/** This is the Slave function, the workers of this MPI application. */
+void Slave(int ID){
+
+ // Start of "Hello World" example..............................................
+ char idstr[32];
+ char buff [BUFSIZE + sizeof(int)];
+ char *cluster = 0;
+ MPI_Status stat;
+
+ // receive from rank 0 (master):
+ // This is a blocking receive, which is typical for slaves.
+
+
+ MPI_Recv(buff,  sizeof(struct payload), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
+ struct payload * pptr = (struct payload*)buff;
+ int csize = pptr->csize; //Number of packets to be recieved
+ int width = 0;
+ int height = 0;
+if(pptr->magic == 0xFE){ //Safty check to ensure valid header message
+ //printf("PROCESSING CLUSTER |%d|\n", pptr->cid);
+ //printf("magic : %d\n", pptr->magic);
+ //printf("cid : %d\n", pptr->cid);
+ //printf("csize : %d\n", pptr->csize);
+ //printf("width : %d\n", pptr->width);
+
+
+ height = pptr->size / pptr->width ; //Num pixels in image/width (in pixels)
+ width = pptr->width;
+ cluster = (char*)malloc (BUFSIZE * csize);
+
+ printf("CSIZE : %d\n", csize);
+ for(int z = 0; z < csize; z++){
+  MPI_Recv(buff, BUFSIZE + sizeof(int) , MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
+  int id = *(int*)buff;
+  //printf("REC ID %d\n", id);
+  memcpy((void*)((char*)cluster + (id * BUFSIZE)), (char*)buff + sizeof(int) , BUFSIZE);
+  
+}
+
+printf("WIDTH: %d\n", width);
+printf("HEIGHT: %d\n", height);
+Output.Allocate(width, height, 3);
+for(int y = 0; y <height; y++){
+   for(int x = 0; x < width*3; x++){
+	Output.Rows[y][x] = *(unsigned char*)(cluster + (y * width* 3) + x );
+	
+}
+
+}
+
+char name[200];
+sprintf(name, "Data/%d.jpg", ID);
+//Output.Write(name);
+//printf(name);
+
+
+
+printf("..\n");
+//DumpHex((void*)((char*)&Output.Rows[0][0]), 10);
+printf("..\n");
+ //cluster contains the image subsection pixel data (r,g,b) array
+ // height, width are vars for each subsection
+ // DumpHex((void*)((char*)cluster), BUFSIZE * 3 );
+ printf("\n");
+//filter with MD filter
+   
+
+    pixel *pixels = (pixel*)cluster; 
+    int yl = height; //Number of rows
+    int xl = width; //Number of pixels wide
+
     int offset;
     int empty = 0;
     for (int i = 0; i < yl*xl; i++){
@@ -349,55 +477,28 @@ void Master () {
                 npx[i] = {0, 0, 0};
             }
         }
-        empty = 0;
 
-        pixel mdpixel = ((pixels + i)->determine_median(&(npx[0])));
+	empty = 0;
 
+        pixel mdpixel = determine_median((pixel*)(pixels + i), &(npx[0]));
+       
         Output.Rows[(int) i/xl][i%xl*3] = mdpixel.r;
         Output.Rows[(int) i/xl][(i%xl*3) + 1] = mdpixel.g;
         Output.Rows[(int) i/xl][(i%xl*3) + 2] = mdpixel.b;
-
-        //printf("Pixel %d processed\n", i);
-    }
-
-  printf("Time = %lg ms\n", (double)toc()/1e-3);
-
-for(int i = 0; i < 1000 && j == 9; i++){
-    pixel mdpx = (pixels+i)->determine_median((pixels+i+1));
-    //printf("MDPX from main -> R: %d, G: %d, B: %d\n", mdpx.r, mdpx.g, mdpx.b);
 }
 
- }
- printf("End of example code...\n\n");
- // End of example -------------------------------------------------------------
-
- // Write the output image
- if(!Output.Write("Data/Output.jpg")){
-  printf("Cannot write image\n");
-  return;
- }
- //! <h3>Output</h3> The file Output.jpg will be created on success to save
- //! the processed output.
 }
-//------------------------------------------------------------------------------
 
-/** This is the Slave function, the workers of this MPI application. */
-void Slave(int ID){
- // Start of "Hello World" example..............................................
- char idstr[32];
- char buff [BUFSIZE];
 
- MPI_Status stat;
+char name[200];
+sprintf(name, "Data/%d.jpg", ID);
+Output.Write(name);
+//printf(name);
 
- // receive from rank 0 (master):
- // This is a blocking receive, which is typical for slaves.
- MPI_Recv(buff, BUFSIZE, MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
- sprintf(idstr, "Processor %d ", ID);
- strncat(buff, idstr, BUFSIZE-1);
- strncat(buff, "reporting for duty", BUFSIZE-1);
 
- // send to rank 0 (master):
- MPI_Send(buff, BUFSIZE, MPI_CHAR, 0, TAG, MPI_COMM_WORLD);
+
+
+
  // End of "Hello World" example................................................
 }
 //------------------------------------------------------------------------------
