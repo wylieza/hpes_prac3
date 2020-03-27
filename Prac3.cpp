@@ -171,7 +171,13 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(int));
  printf("Start of example code...\n");
  int size = Input.Height*Input.Width;
  int segment = (size / (numprocs-1) ) * Input.Components;
- int packets = floor((double)(segment / BUFSIZE )); //TODO change this to ceil
+ int rowfit = ceil((double)segment/Input.Width/3);
+ int rowcomp = (Input.Height - rowfit)/ (numprocs - 2);
+
+ int row = 0;
+ int packets = 0;
+ int packets_fit = ceil((double)((rowfit * Input.Width * 3) / (double)BUFSIZE )); //TODO change this to ceil
+ int packets_comp = ceil((double)((rowcomp * Input.Width * 3) / (double)BUFSIZE )); //TODO change this to ceil
  char * tmp = (char*)malloc(size * Input.Components); //Removed +10
 
 for(int y = 0; y < Input.Height; y++){
@@ -182,14 +188,23 @@ for(int y = 0; y < Input.Height; y++){
 
  //DumpHex((void*)((char*)tmp), BUFSIZE * packets );
  //printf("\n");
- printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+ //printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
 
  for(j = 1; j < numprocs; j++){
   struct payload pl;
   pl.magic = 0xFE;
 
   pl.cid = j;
-  pl.csize = packets;
+  if(j == 1){
+  pl.csize = packets_fit;
+  row = rowfit;
+  packets = packets_fit;
+  }
+  else{
+  pl.csize = packets_comp;
+  packets = packets_comp;
+  row = rowcomp;
+  }
   pl.width = Input.Width;
   pl.size = segment / Input.Components;
  
@@ -200,7 +215,7 @@ for(int y = 0; y < Input.Height; y++){
   for(int k = 0; k < packets; k++){
   int * ip = (int*)pool;
   *ip = k;
-  memcpy((void*)(char*)pool+sizeof(int), (void*)(tmp + (segment * (j-1)) + (BUFSIZE * k)), BUFSIZE);
+  memcpy((void*)(char*)pool+sizeof(int), (void*)(tmp + (row * 3 * Input.Width * (j-1)) + (BUFSIZE * k)), BUFSIZE);
   MPI_Send((void*)pool, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
  
 
