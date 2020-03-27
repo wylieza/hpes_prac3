@@ -173,7 +173,7 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
  int packets = ceil((double)(segment / BUFSIZE ));
 
 
- printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+ //printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
  for(j = 1; j < numprocs; j++){
   struct payload pl;
   pl.magic = 0xFE;
