@@ -51,6 +51,14 @@
 // Includes needed for the program
 #include "Prac3.h"
 
+struct __attribute__((packed)) payload
+{
+int magic;
+int cid;
+int width;
+int csize;
+int size;
+};
 
 //Pixel Struct
 typedef struct pixel{
@@ -107,7 +115,34 @@ typedef struct pixel{
         return median_pixel; //Return the median pixel
     }
 } pixel;
-
+void DumpHex(const void* data, size_t size) {
+	char ascii[17];
+	size_t i, j;
+	ascii[16] = '\0';
+	for (i = 0; i < size; ++i) {
+		printf("%02X ", ((unsigned char*)data)[i]);
+		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+			ascii[i % 16] = ((unsigned char*)data)[i];
+		} else {
+			ascii[i % 16] = '.';
+		}
+		if ((i+1) % 8 == 0 || i+1 == size) {
+			printf(" ");
+			if ((i+1) % 16 == 0) {
+				printf("|  %s \n", ascii);
+			} else if (i+1 == size) {
+				ascii[(i+1) % 16] = '\0';
+				if ((i+1) % 16 <= 8) {
+					printf(" ");
+				}
+				for (j = (i+1) % 16; j < 16; ++j) {
+					printf("   ");
+				}
+				printf("|  %s \n", ascii);
+			}
+		}
+	}
+}
 /** This is the master node function, describing the operations
     that the master will be doing */
 void Master () {
@@ -116,21 +151,8 @@ void Master () {
  int  j;             //! j: Loop counter
  char buff[BUFSIZE]; //! buff: Buffer for transferring message data
  MPI_Status stat;    //! stat: Status of the MPI application
+char *pool = (char*)malloc(BUFSIZE + sizeof(struct payload));
 
- // Start of "Hello World" example..............................................
- printf("0: We have %d processors\n", numprocs);
- for(j = 1; j < numprocs; j++) {
-  sprintf(buff, "Hello %d! ", j);
-  MPI_Send(buff, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD);
- }
- for(j = 1; j < numprocs; j++) {
-  // This is blocking: normally one would use MPI_Iprobe, with MPI_ANY_SOURCE,
-  // to check for messages, and only when there is a message, receive it
-  // with MPI_Recv.  This would let the master receive messages from any
-  // slave, instead of a specific one only.
-  MPI_Recv(buff, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD, &stat);
-  printf("0: %s\n", buff);
- }
  // End of "Hello World" example................................................
 
  // Read the input image
@@ -142,28 +164,38 @@ void Master () {
  // Allocated RAM for the output image
  if(!Output.Allocate(Input.Width, Input.Height, Input.Components)) return;
 
+
+
  // This is example code of how to copy image files ----------------------------
  printf("Start of example code...\n");
- for(j = 0; j < 10; j++){
-  tic();
-  int x, y;
-  for(y = 0; y < Input.Height; y++){
-   for(x = 0; x < Input.Width*Input.Components; x++){
-    Output.Rows[y][x] = Input.Rows[y][x];
-   }
-  }
-  printf("Time = %lg ms\n", (double)toc()/1e-3);
- }
- printf("End of example code...\n\n");
- // End of example -------------------------------------------------------------
+ int size = Input.Height*Input.Width;
+ int segment = (size / (numprocs-1) ) * Input.Components;
+ int packets = ceil((double)(segment / BUFSIZE ));
 
- // Write the output image
- if(!Output.Write("Data/Output.jpg")){
-  printf("Cannot write image\n");
-  return;
+
+ printf("size : %d\nsegment : %d\npackets : %d", size, segment, packets);
+ for(j = 1; j < numprocs; j++){
+  struct payload pl;
+  pl.magic = 0xFE;
+
+  pl.cid = j;
+  pl.csize = packets;
+  pl.width = Input.Width;
+  pl.size = segment / Input.Components;
+  memcpy((void*)pool, (void*)&pl, sizeof(struct payload));
+  MPI_Send((void*)pool, sizeof(struct payload), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
+
+  // send image data
+  for(int k = 0; k < packets; k++){
+  memcpy((void*)(char*)pool, (void*)(&Input.Rows[0][0] + (segment * (j-1)) + (BUFSIZE * k)), BUFSIZE);
+  MPI_Send((void*)pool, BUFSIZE, MPI_CHAR, j, TAG, MPI_COMM_WORLD);
+ 
+
+ } 
+
+
  }
- //! <h3>Output</h3> The file Output.jpg will be created on success to save
- //! the processed output.
+
 }
 //------------------------------------------------------------------------------
 
@@ -171,19 +203,48 @@ void Master () {
 void Slave(int ID){
  // Start of "Hello World" example..............................................
  char idstr[32];
- char buff [BUFSIZE];
-
+ char buff [BUFSIZE + sizeof(struct payload)];
+ char *cluster = 0;
  MPI_Status stat;
 
  // receive from rank 0 (master):
  // This is a blocking receive, which is typical for slaves.
- MPI_Recv(buff, BUFSIZE, MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
- sprintf(idstr, "Processor %d ", ID);
- strncat(buff, idstr, BUFSIZE-1);
- strncat(buff, "reporting for duty", BUFSIZE-1);
 
- // send to rank 0 (master):
- MPI_Send(buff, BUFSIZE, MPI_CHAR, 0, TAG, MPI_COMM_WORLD);
+
+ MPI_Recv(buff,  sizeof(struct payload), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
+ struct payload * pptr = (struct payload*)buff;
+ int csize = pptr->csize;
+ int width = 0;
+ int height = 0;
+if(pptr->magic == 0xFE){
+ //printf("PROCESSING CLUSTER |%d|\n", pptr->cid);
+ //printf("magic : %d\n", pptr->magic);
+ //printf("cid : %d\n", pptr->cid);
+ //printf("csize : %d\n", pptr->csize);
+ //printf("width : %d\n", pptr->width);
+
+
+ height = pptr->size / pptr->width ;
+ width = pptr->width;
+ cluster = (char*)malloc (BUFSIZE * csize);
+
+ for(int z = 0; z < csize; z++){
+  MPI_Recv(buff, BUFSIZE , MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
+  memcpy((void*)((char*)cluster + (z * BUFSIZE)), (char*)buff , BUFSIZE);
+  
+}
+ //cluster contains the image subsection pixel data (r,g,b) array
+ // height, width are vars for each subsection
+ //DumpHex((void*)((char*)cluster), BUFSIZE * 2 );
+ //printf("\n");
+}
+
+
+ 
+
+
+
+
  // End of "Hello World" example................................................
 }
 //------------------------------------------------------------------------------
