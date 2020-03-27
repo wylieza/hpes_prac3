@@ -171,8 +171,8 @@ char *pool = (char*)malloc(BUFSIZE + sizeof(int));
  printf("Start of example code...\n");
  int size = Input.Height*Input.Width;
  int segment = (size / (numprocs-1) ) * Input.Components;
- int packets = floor((double)(segment / BUFSIZE ));
- char * tmp = (char*)malloc(size * Input.Components + 10);
+ int packets = floor((double)(segment / BUFSIZE )); //TODO change this to ceil
+ char * tmp = (char*)malloc(size * Input.Components); //Removed +10
 
 for(int y = 0; y < Input.Height; y++){
    for(int x = 0; x < Input.Width*Input.Components; x++){
@@ -227,10 +227,10 @@ void Slave(int ID){
 
  MPI_Recv(buff,  sizeof(struct payload), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
  struct payload * pptr = (struct payload*)buff;
- int csize = pptr->csize;
+ int csize = pptr->csize; //Number of packets to be recieved
  int width = 0;
  int height = 0;
-if(pptr->magic == 0xFE){
+if(pptr->magic == 0xFE){ //Safty check to ensure valid header message
  //printf("PROCESSING CLUSTER |%d|\n", pptr->cid);
  //printf("magic : %d\n", pptr->magic);
  //printf("cid : %d\n", pptr->cid);
@@ -238,7 +238,7 @@ if(pptr->magic == 0xFE){
  //printf("width : %d\n", pptr->width);
 
 
- height = pptr->size / pptr->width ;
+ height = pptr->size / pptr->width ; //Num pixels in image/width (in pixels)
  width = pptr->width;
  cluster = (char*)malloc (BUFSIZE * csize);
 
