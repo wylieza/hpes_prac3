@@ -388,7 +388,10 @@ void Master()
             {
                 MPI_Recv(buff, BUFSIZE + sizeof(int), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
                 int id = *(int *)buff;
-                if (id < plptr->num_msgs - 1)
+                if(ID == 3){
+                    printf("Msg id is '%d' of '%d' msg -> slave %d\n", id, num_msgs, ID);
+                }
+                if (id < num_msgs - 1)
                 {
                     memcpy((void *)((char *)image_segment + (id * BUFSIZE)), (char *)buff + sizeof(int), BUFSIZE); //Copy from recieved message into correct location in image_segment
                     remaining_bytes -= BUFSIZE;
