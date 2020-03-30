@@ -171,20 +171,19 @@ void Master()
     // End of "Hello World" example................................................
 
     // Read the input image
-    if (!Input.Read("Data/greatwall.jpg"))
+    if (!Input.Read("Data/small.jpg"))
     {
         printf("Cannot read image\n");
         return;
     }
 
     int total_num_pixels = Input.Height * Input.Width;          //Total number of pixels
-    int num_rows = ceil((double)Input.Height / (numprocs - 1)); //Number of rows for all except the last segement
+    int num_rows = ceil((double)Input.Height / (numprocs - 1)); //Number of rows for each slave... The final slave just does remaining rows (remaining rows < num_rows)
 
     //printf("Height: %d\n", Input.Height);
-    int num_msg = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE)); //Number of messages req to send all the rows in row_fit
-    int additional_msgs = ceil((double)(((num_rows + 2) * Input.Width * 3) / (double)BUFSIZE)) - num_msg;
 
-    char *tmp = (char *)malloc(total_num_pixels * Input.Components); //Declaring tmp
+    int image_size = total_num_pixels * Input.Components; //Image size in bytes
+    char *tmp = (char *)malloc(image_size); //Declaring tmp
 
     for (int y = 0; y < Input.Height; y++)
     {
@@ -205,8 +204,7 @@ void Master()
         pl.cid = j;
         if (j != numprocs - 1)
         {                          //All slaves except the last
-            pl.num_msgs = num_msg; //num_msgs specifices number of messages to expect
-            rows = num_rows;       //Number of rows that can be reconstructed from the data
+            rows = num_rows;       //Number of rows that can be reconstructed from the data            
         }
         else
         {                                   //This is the last slave
@@ -215,17 +213,20 @@ void Master()
             {
                 rows = num_rows;
             }
-            pl.num_msgs = ceil((double)((num_rows * Input.Width * 3) / (double)BUFSIZE));
         }
+        pl.num_msgs = ceil((double)((rows * Input.Width * Input.Components) / (double)BUFSIZE)); //Number of messages req to send all the rows in num_rows, final slave to send less msgs
+        int additional_msgs = ceil((double)(((rows + 2) * Input.Width * Input.Components) / (double)BUFSIZE)) - pl.num_msgs;
 
         if (j != 1)
         { //Not first slave so add overlap rows
+            printf("Slave %d -> Originally %d msgs... but now add %d to get >%d msgs<\n", j, pl.num_msgs, additional_msgs, pl.num_msgs+ additional_msgs);
             pl.num_msgs += additional_msgs;
             rows += 2;
-            tids_offset = 2 * Input.Width * 3;
+            tids_offset += 2 * Input.Width * 3;
         }
         else
         {
+            printf("Slave %d -> >%d msgs<\n", j, pl.num_msgs);
             tids_offset = 0;
         }
 
@@ -236,20 +237,28 @@ void Master()
         MPI_Send((void *)data_frame, sizeof(struct payload), MPI_CHAR, j, TAG, MPI_COMM_WORLD); //Send the details of incoming data
 
         //Send image data
-        for (int k = 0; k < pl.num_msgs; k++)
+        for (int k = 0; k < pl.num_msgs /*&& total_image_data_sent < image_size*/; k++) //Added second condition because last slave doesnt utilize num_msgs but rather sends till image is sent
         {
             //Write message number to data frame
             int *ip = (int *)data_frame; //casting so we can write first 4 bytes
             *ip = k;
 
             //Write pixel data to data frame
-            if (k != (pl.num_msgs - 1))
+            if (k != (pl.num_msgs - 1) /*&& total_image_data_sent < image_size - 128*/) //Second condition because last slave's num_msgs is incorrect
             {
+                if(14748800 < total_image_data_sent - tids_offset){
+                    printf("Mem copy from index: %d to be sent in msg %d\n", total_image_data_sent - tids_offset, k);
+                }
                 memcpy((void *)(char *)data_frame + sizeof(int), (void *)(tmp + total_image_data_sent - tids_offset), BUFSIZE); //Tack on the image data (128 bytes of idata)
                 total_image_data_sent += BUFSIZE;
+
+                if(14748800 < total_image_data_sent - tids_offset){
+                    printf("Mem copy from index: %d success!\n", total_image_data_sent - tids_offset);
+                }
             }
             else
             {
+                printf("Sending final msg to slave %d\n", j);
                 int remaining_bytes = (pl.num_pixels * 3) % BUFSIZE;
                 if (remaining_bytes == 0)
                 {
@@ -388,7 +397,7 @@ void Master()
             {
                 MPI_Recv(buff, BUFSIZE + sizeof(int), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
                 int id = *(int *)buff;
-                if(ID == 3){
+                if(ID == 3 && 38366 < id){
                     printf("Msg id is '%d' of '%d' msg -> slave %d\n", id, num_msgs, ID);
                 }
                 if (id < num_msgs - 1)
