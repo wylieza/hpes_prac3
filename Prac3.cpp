@@ -352,7 +352,9 @@ void Master()
     void Slave(int ID)
     {
 
-        // Start of "Hello World" example..............................................
+        printf("Slave %d activated!\n", ID);
+        
+
         char idstr[32];
         char buff[BUFSIZE + sizeof(int)];
         char *image_segment = 0;
@@ -380,13 +382,12 @@ void Master()
             width = plptr->width;
             image_segment = (char *)malloc(remaining_bytes); //Entire image segment
 
-            printf("num_msgs : %d\n", num_msgs);
+            printf("\nSlave %d -> Number incoming messages : %d\n", ID, num_msgs);
 
             while (remaining_bytes > 0)
             {
                 MPI_Recv(buff, BUFSIZE + sizeof(int), MPI_CHAR, 0, TAG, MPI_COMM_WORLD, &stat);
                 int id = *(int *)buff;
-                //printf("REC ID %d\n", id);
                 if (id < plptr->num_msgs - 1)
                 {
                     memcpy((void *)((char *)image_segment + (id * BUFSIZE)), (char *)buff + sizeof(int), BUFSIZE); //Copy from recieved message into correct location in image_segment
@@ -394,6 +395,7 @@ void Master()
                 }
                 else
                 {
+                    printf("Msg id is '%d' indicates last msg -> slave %d\n", id, ID);
                     int copy_size = remaining_bytes % BUFSIZE;
                     if (copy_size == 0)
                     {
@@ -404,8 +406,8 @@ void Master()
                 }
             }
 
-            printf("WIDTH: %d\n", width);
-            printf("HEIGHT: %d\n", height);
+            printf("Slave %d Width: %d\n", ID,  width);
+            printf("Slave %d Height: %d\n", ID, height);
             segment.Allocate(width, height, 3);
 
             char name[200];
@@ -413,13 +415,13 @@ void Master()
             //segment.Write(name);
             //printf(name);
 
-            printf("..\n");
+            //printf("..\n");
             //DumpHex((void*)((char*)&segment.Rows[0][0]), 10);
-            printf("..\n");
+            //printf("..\n");
             //image_segment contains the image subsection pixel data (r,g,b) array
             // height, width are vars for each subsection
             // DumpHex((void*)((char*)image_segment), BUFSIZE * 3 );
-            printf("\n");
+            //printf("\n");
             //filter with MD filter
 
             pixel *pixels = (pixel *)image_segment;
