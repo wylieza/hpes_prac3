@@ -448,7 +448,7 @@ void Master()
 
                 //cases:
                 if (i == 0)
-                { //1
+                { //1 Top left corner
                     offset = i + 1;
                     npx[0] = *(pixels + offset);
 
@@ -462,7 +462,7 @@ void Master()
                 }
 
                 if (i == xl - 1)
-                { //2
+                { //2 Top right corner
                     offset = i - 1;
                     npx[0] = *(pixels + offset);
 
@@ -476,7 +476,7 @@ void Master()
                 }
 
                 if (i == (yl - 1) * xl)
-                { //3
+                { //3 Bottom left corner
                     offset = i - xl;
                     npx[0] = *(pixels + offset);
 
@@ -490,21 +490,7 @@ void Master()
                 }
 
                 if (i == yl * xl - 1)
-                { //4
-                    offset = i - xl - 1;
-                    npx[0] = *(pixels + offset);
-
-                    offset = i - xl;
-                    npx[1] = *(pixels + offset);
-
-                    offset = i - 1;
-                    npx[2] = *(pixels + offset);
-
-                    empty = 5;
-                }
-
-                if (i == yl * xl - 1)
-                { //4
+                { //4 Bottom right corner
                     offset = i - xl - 1;
                     npx[0] = *(pixels + offset);
 
@@ -518,7 +504,7 @@ void Master()
                 }
 
                 if (i % xl == 0 && empty == 0)
-                { //5
+                { //5 Left side
                     offset = i - xl;
                     npx[0] = *(pixels + offset);
 
@@ -538,7 +524,7 @@ void Master()
                 }
 
                 if (i < xl - 1 && empty == 0)
-                { //6
+                { //6 Top side
                     offset = i + 1;
                     npx[0] = *(pixels + offset);
 
@@ -558,7 +544,7 @@ void Master()
                 }
 
                 if ((i + 1) % xl == 0 && empty == 0)
-                { //7
+                { //7 Right side
                     offset = i - xl - 1;
                     npx[0] = *(pixels + offset);
 
@@ -577,8 +563,8 @@ void Master()
                     empty = 3;
                 }
 
-                if (i > (yl - 1) * xl && empty == 0)
-                { //8
+                if (i == (yl - 1) * xl && empty == 0)
+                { //8 Bottom side
                     offset = i - xl - 1;
                     npx[0] = *(pixels + offset);
 
