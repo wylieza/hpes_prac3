@@ -315,8 +315,7 @@ void Master()
     }
 
     Output.Write("Data/Output.jpg");
-    double time = toc() - t2;
-    printf("SEND: %f\nREC: %f\n", t2, time);
+    double time = toc();
     printf("All processing complete in %f and output image saved!\n", time);
 }
 
