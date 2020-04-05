@@ -171,12 +171,13 @@ void Master()
     // End of "Hello World" example................................................
 
     // Read the input image
-    if (!Input.Read("Data/small.jpg"))
+    if (!Input.Read("Data/greatwall.jpg"))
     {
         printf("Cannot read image\n");
         return;
     }
-
+    // start timing after image read.
+    tic();
     int total_num_pixels = Input.Height * Input.Width;          //Total number of pixels
     int num_rows = ceil((double)Input.Height / (numprocs - 1)); //Number of rows for each slave... The final slave just does remaining rows (remaining rows < num_rows)
 
@@ -258,7 +259,7 @@ void Master()
             MPI_Send((void *)data_frame, BUFSIZE + sizeof(int), MPI_CHAR, j, TAG, MPI_COMM_WORLD);
         }
     }
-
+    double t2 = toc();
     //Recieve the results
     char *image_segment = (char *)malloc(Input.Height*Input.Width*Input.Components); //Entire image reconstruction data
     int base_offset = 0; //Keeps track in bytes of the offset based on the last slave
@@ -314,7 +315,9 @@ void Master()
     }
 
     Output.Write("Data/Output.jpg");
-    printf("All processing complete and output image saved!\n");
+    double time = toc() - t2;
+    printf("SEND: %f\nREC: %f\n", t2, time);
+    printf("All processing complete in %f and output image saved!\n", time);
 }
 
 
